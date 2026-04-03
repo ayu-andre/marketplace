@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MarketBénin — Connexion / Inscription</title>
+<meta name="description" content="Créez votre compte MarketBénin — Acheteur, Vendeur ou connectez-vous.">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFirestore, doc, setDoc, getDoc, collection, getDocs, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // ✅ CONFIGURATION FIREBASE — MARKETBÉNIN
+  const firebaseConfig = {
+    apiKey: "AIzaSyAOf_TZm2X-sKgRGpBkuimsopRkHlbV7io",
+    authDomain: "marketbenin-c4412.firebaseapp.com",
+    projectId: "marketbenin-c4412",
+    storageBucket: "marketbenin-c4412.firebasestorage.app",
+    messagingSenderId: "367058978064",
+    appId: "1:367058978064:web:27b08da8aac3006987d195",
+    measurementId: "G-VBP04RXHFC"
+  };
+
+  // ✅ VOTRE EMAIL ADMIN
+  const ADMIN_EMAIL = "andreassogba9@gmail.com";
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // ===== ÉTAT AUTH =====
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        window._currentUser = { ...data, uid: user.uid, email: user.email };
+        showDashboard(data);
+      } else {
+        if (user.email === ADMIN_EMAIL) {
+          const adminData = {
+            nom: "André IA Boss",
+            email: user.email,
+            tel: "+229 01 69 20 12 89",
+            ville: "Cotonou",
+            role: "admin",
+            statut: "actif",
+            dateInscription: new Date().toISOString(),
+            uid: user.uid
+          };
+          await setDoc(doc(db, "users", user.uid), adminData);
+          showDashboard(adminData);
+        }
+      }
+    } else {
+      window._currentUser = null;
+      showAuthScreen();
+    }
+  });
+
+  // ===== INSCRIPTION =====
+  window.register = async function() {
+    const nom = document.getElementById('reg_nom').value.trim();
+    const email = document.getElementById('reg_email').value.trim();
+    const tel = document.getElementById('reg_tel').value.trim();
+    const ville = document.getElementById('reg_ville').value;
+    const role = document.getElementById('reg_role').value;
+    const pwd = document.getElementById('reg_pwd').value;
+    const pwd2 = document.getElementById('reg_pwd2').value;
+
+    if (!nom||!email||!tel||!ville||!role||!pwd) return showError('reg','Veuillez remplir tous les champs.');
+    if (pwd !== pwd2) return showError('reg','Les mots de passe ne correspondent pas.');
+    if (pwd.length < 6) return showError('reg','Minimum 6 caractères pour le mot de passe.');
+
+    setLoading('btn_register', true);
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, pwd);
+      await updateProfile(cred.user, { displayName: nom });
+      const userData = {
+        nom, email, tel, ville,
+        role: email === ADMIN_EMAIL ? 'admin' : role,
+        statut: role === 'vendeur' ? 'en_attente' : 'actif',
+        dateInscription: new Date().toISOString(),
+        uid: cred.user.uid,
+      };
+      await setDoc(doc(db, "users", cred.user.uid), userData);
+      showSuccess('reg', role === 'vendeur'
+        ? '✅ Compte vendeur créé ! En attente de validation par l\'admin.'
+        : '🎉 Bienvenue sur MarketBénin ! Compte créé avec succès.');
+    } catch(e) {
+      showError('reg', firebaseError(e.code));
+    }
+    setLoading('btn_register', false);
+  };
+
+  // ===== CONNEXION =====
+  window.login = async function() {
+    const email = document.getElementById('login_email').value.trim();
+    const pwd = document.getElementById('login_pwd').value;
+    if (!email||!pwd) return showError('login','Email et mot de passe requis.');
+    setLoading('btn_login', true);
+    try {
+      await signInWithEmailAndPassword(auth, email, pwd);
+    } catch(e) {
+      showError('login', firebaseError(e.code));
+      setLoading('btn_login', false);
+    }
+  };
+
+  // ===== DÉCONNEXION =====
+  window.logout = async function() {
+    await signOut(auth);
+    location.reload();
+  };
+
+  // ===== DASHBOARD =====
+  function showDashboard(userData) {
+    document.getElementById('authScreen').style.display = 'none';
+    document.getElementById('dashboardScreen').style.display = 'block';
+    if (userData.role === 'admin') renderAdmin(userData);
+    else if (userData.role === 'vendeur') renderVendeur(userData);
+    else renderAcheteur(userData);
+  }
+
+  // ===== ADMIN =====
+  async function renderAdmin(u) {
+    const snap = await getDocs(collection(db, "users"));
+    let acheteurs=[], vendeurs=[], enAttente=0;
+    snap.forEach(d => {
+      const data = d.data();
+      if (data.role==='vendeur') { vendeurs.push({...data,uid:d.id}); if(data.statut==='en_attente') enAttente++; }
+      else if (data.role==='acheteur') acheteurs.push({...data,uid:d.id});
+    });
+
+    document.getElementById('dashContent').innerHTML = `
+      <div class="dash-header">
+        <div class="dash-avatar admin"><i class="fas fa-crown"></i></div>
+        <div><h2>Tableau Admin</h2><p>Bonjour ${u.nom} 👋 — Vous contrôlez MarketBénin</p></div>
+        <button class="btn-logout" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Déconnexion</button>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card blue"><i class="fas fa-users"></i><div><span class="stat-n">${snap.size}</span><span>Total membres</span></div></div>
+        <div class="stat-card green"><i class="fas fa-store"></i><div><span class="stat-n">${vendeurs.length}</span><span>Vendeurs</span></div></div>
+        <div class="stat-card orange"><i class="fas fa-shopping-bag"></i><div><span class="stat-n">${acheteurs.length}</span><span>Acheteurs</span></div></div>
+        <div class="stat-card red"><i class="fas fa-clock"></i><div><span class="stat-n">${enAttente}</span><span>En attente</span></div></div>
+      </div>
+      <div class="section-tabs">
+        <button class="tab-btn active" onclick="switchTab(this,'tab_v')">Vendeurs (${vendeurs.length})</button>
+        <button class="tab-btn" onclick="switchTab(this,'tab_a')">Acheteurs (${acheteurs.length})</button>
+      </div>
+      <div id="tab_v" class="tab-content active">
+        <h3 style="margin-bottom:16px">Gestion des Vendeurs</h3>
+        <div class="users-list">
+          ${vendeurs.length===0 ? '<p style="color:#999;text-align:center;padding:30px">Aucun vendeur inscrit</p>' :
+          vendeurs.map(v=>`
+            <div class="user-row">
+              <div class="user-avatar">${v.nom.charAt(0).toUpperCase()}</div>
+              <div class="user-info">
+                <strong>${v.nom}</strong>
+                <span>${v.email} · ${v.tel}</span>
+                <span><i class="fas fa-map-marker-alt"></i> ${v.ville} · Inscrit le ${new Date(v.dateInscription).toLocaleDateString('fr-FR')}</span>
+              </div>
+              <div class="user-status ${v.statut}">${v.statut==='actif'?'✅ Actif':v.statut==='en_attente'?'⏳ En attente':'🚫 Suspendu'}</div>
+              <div class="user-actions">
+                ${v.statut==='en_attente'?`<button class="btn-approve" onclick="approveUser('${v.uid}')"><i class="fas fa-check"></i> Approuver</button>`:''}
+                ${v.statut==='actif'?`<button class="btn-suspend" onclick="suspendUser('${v.uid}')"><i class="fas fa-ban"></i> Suspendre</button>`:''}
+                ${v.statut==='suspendu'?`<button class="btn-approve" onclick="approveUser('${v.uid}')"><i class="fas fa-redo"></i> Réactiver</button>`:''}
+                <button class="btn-delete" onclick="deleteUser('${v.uid}')"><i class="fas fa-trash"></i></button>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+      <div id="tab_a" class="tab-content">
+        <h3 style="margin-bottom:16px">Gestion des Acheteurs</h3>
+        <div class="users-list">
+          ${acheteurs.length===0 ? '<p style="color:#999;text-align:center;padding:30px">Aucun acheteur inscrit</p>' :
+          acheteurs.map(a=>`
+            <div class="user-row">
+              <div class="user-avatar" style="background:linear-gradient(135deg,#1A1A2E,#16213E)">${a.nom.charAt(0).toUpperCase()}</div>
+              <div class="user-info">
+                <strong>${a.nom}</strong>
+                <span>${a.email} · ${a.tel}</span>
+                <span><i class="fas fa-map-marker-alt"></i> ${a.ville} · Inscrit le ${new Date(a.dateInscription).toLocaleDateString('fr-FR')}</span>
+              </div>
+              <div class="user-status ${a.statut}">${a.statut==='actif'?'✅ Actif':'🚫 Suspendu'}</div>
+              <div class="user-actions">
+                ${a.statut==='actif'?`<button class="btn-suspend" onclick="suspendUser('${a.uid}')"><i class="fas fa-ban"></i> Suspendre</button>`:`<button class="btn-approve" onclick="approveUser('${a.uid}')"><i class="fas fa-redo"></i> Réactiver</button>`}
+                <button class="btn-delete" onclick="deleteUser('${a.uid}')"><i class="fas fa-trash"></i></button>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  // ===== VENDEUR =====
+  function renderVendeur(u) {
+    document.getElementById('dashContent').innerHTML = `
+      <div class="dash-header">
+        <div class="dash-avatar vendeur"><i class="fas fa-store"></i></div>
+        <div><h2>Espace Vendeur</h2><p>Bonjour ${u.nom} 👋</p></div>
+        <button class="btn-logout" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Déconnexion</button>
+      </div>
+      ${u.statut==='en_attente' ? `
+        <div class="alert-warning">
+          <i class="fas fa-clock"></i>
+          <div><strong>Compte en attente de validation</strong><br>
+          L'admin MarketBénin va vérifier et activer votre boutique sous 24h.<br>
+          Contactez-nous : <a href="https://wa.me/22901692012" style="color:var(--primary);font-weight:700">WhatsApp +229 01 69 20 12 89</a></div>
+        </div>` :
+      u.statut==='suspendu' ? `
+        <div class="alert-danger"><i class="fas fa-ban"></i>
+        <div><strong>Compte suspendu</strong><br>Contactez l'admin pour plus d'informations.</div></div>` : `
+        <div class="stats-row">
+          <div class="stat-card green"><i class="fas fa-box"></i><div><span class="stat-n">0</span><span>Produits</span></div></div>
+          <div class="stat-card blue"><i class="fas fa-shopping-cart"></i><div><span class="stat-n">0</span><span>Commandes</span></div></div>
+          <div class="stat-card orange"><i class="fas fa-eye"></i><div><span class="stat-n">0</span><span>Vues boutique</span></div></div>
+          <div class="stat-card purple"><i class="fas fa-coins"></i><div><span class="stat-n">0 FCFA</span><span>Revenus</span></div></div>
+        </div>
+        <div class="vendor-info-box">
+          <h3><i class="fas fa-id-card"></i> Votre profil vendeur</h3>
+          <div class="info-grid">
+            <div><label>Nom complet</label><span>${u.nom}</span></div>
+            <div><label>Email</label><span>${u.email}</span></div>
+            <div><label>Téléphone</label><span>${u.tel}</span></div>
+            <div><label>Ville</label><span>${u.ville}</span></div>
+            <div><label>Membre depuis</label><span>${new Date(u.dateInscription).toLocaleDateString('fr-FR')}</span></div>
+            <div><label>Statut</label><span class="badge-actif">✅ Vendeur Actif</span></div>
+          </div>
+          <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap">
+            <button class="btn-primary-dash" onclick="window.open('index.html')"><i class="fas fa-store"></i> Voir le Marketplace</button>
+            <button class="btn-outline-dash" onclick="window.open('https://wa.me/22901692012')"><i class="fab fa-whatsapp"></i> Contacter l'admin</button>
+          </div>
+        </div>`}`;
+  }
+
+  // ===== ACHETEUR =====
+  function renderAcheteur(u) {
+    document.getElementById('dashContent').innerHTML = `
+      <div class="dash-header">
+        <div class="dash-avatar acheteur"><i class="fas fa-user"></i></div>
+        <div><h2>Mon Compte</h2><p>Bonjour ${u.nom} 👋 Bienvenue sur MarketBénin !</p></div>
+        <button class="btn-logout" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Déconnexion</button>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card blue"><i class="fas fa-shopping-bag"></i><div><span class="stat-n">0</span><span>Commandes</span></div></div>
+        <div class="stat-card green"><i class="fas fa-heart"></i><div><span class="stat-n">0</span><span>Favoris</span></div></div>
+        <div class="stat-card orange"><i class="fas fa-star"></i><div><span class="stat-n">0</span><span>Avis donnés</span></div></div>
+      </div>
+      <div class="vendor-info-box">
+        <h3><i class="fas fa-user-circle"></i> Mes informations</h3>
+        <div class="info-grid">
+          <div><label>Nom complet</label><span>${u.nom}</span></div>
+          <div><label>Email</label><span>${u.email}</span></div>
+          <div><label>Téléphone</label><span>${u.tel}</span></div>
+          <div><label>Ville</label><span>${u.ville}</span></div>
+          <div><label>Membre depuis</label><span>${new Date(u.dateInscription).toLocaleDateString('fr-FR')}</span></div>
+          <div><label>Statut</label><span class="badge-actif">✅ Actif</span></div>
+        </div>
+        <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap">
+          <button class="btn-primary-dash" onclick="window.open('index.html')"><i class="fas fa-shopping-cart"></i> Continuer mes achats</button>
+          <button class="btn-outline-dash" onclick="window.open('https://wa.me/22901692012')"><i class="fab fa-whatsapp"></i> Support WhatsApp</button>
+        </div>
+      </div>`;
+  }
+
+  // ===== ACTIONS ADMIN =====
+  window.approveUser = async function(uid) {
+    await updateDoc(doc(db,"users",uid),{statut:'actif'});
+    showToast('✅ Utilisateur approuvé !');
+    const u = await getDoc(doc(db,"users",window._currentUser.uid));
+    renderAdmin(u.data());
+  };
+  window.suspendUser = async function(uid) {
+    await updateDoc(doc(db,"users",uid),{statut:'suspendu'});
+    showToast('⚠️ Utilisateur suspendu');
+    const u = await getDoc(doc(db,"users",window._currentUser.uid));
+    renderAdmin(u.data());
+  };
+  window.deleteUser = async function(uid) {
+    if(!confirm('Supprimer définitivement cet utilisateur ?')) return;
+    await deleteDoc(doc(db,"users",uid));
+    showToast('🗑️ Utilisateur supprimé');
+    const u = await getDoc(doc(db,"users",window._currentUser.uid));
+    renderAdmin(u.data());
+  };
+
+  // ===== UTILITAIRES =====
+  function firebaseError(code) {
+    const e = {
+      'auth/email-already-in-use':'Cet email est déjà utilisé.',
+      'auth/invalid-email':'Adresse email invalide.',
+      'auth/weak-password':'Mot de passe trop faible (6 caractères minimum).',
+      'auth/user-not-found':'Aucun compte avec cet email.',
+      'auth/wrong-password':'Mot de passe incorrect.',
+      'auth/too-many-requests':'Trop de tentatives. Réessayez dans quelques minutes.',
+      'auth/invalid-credential':'Email ou mot de passe incorrect.',
+      'auth/network-request-failed':'Problème de connexion internet.',
+    };
+    return e[code] || 'Une erreur est survenue. Réessayez.';
+  }
+</script>
+
+<style>
+:root {
+  --primary: #FF6B00; --primary-dark: #E55A00;
+  --secondary: #1A1A2E; --success: #00C853;
+  --danger: #F44336; --warning: #FF9800;
+  --white: #fff; --gray-50: #FAFAFA;
+  --gray-100: #F5F5F5; --gray-200: #EEEEEE;
+  --gray-600: #757575; --radius: 14px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.1);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Poppins',sans-serif;background:linear-gradient(135deg,#0F0F1A 0%,#1A1A2E 50%,#16213E 100%);min-height:100vh;color:#333;}
+
+/* AUTH */
+#authScreen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.auth-container{background:white;border-radius:24px;overflow:hidden;width:100%;max-width:900px;box-shadow:0 20px 80px rgba(0,0,0,0.4);display:grid;grid-template-columns:1fr 1fr;min-height:600px;}
+.auth-side{background:linear-gradient(160deg,var(--primary) 0%,#FF8C38 40%,#E55A00 100%);padding:50px 40px;display:flex;flex-direction:column;justify-content:center;color:white;position:relative;overflow:hidden;}
+.auth-side::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M0 0h40v40H0V0zm40 40h40v40H40V40z'/%3E%3C/g%3E%3C/svg%3E");}
+.auth-logo{display:flex;align-items:center;gap:12px;margin-bottom:36px;position:relative;}
+.auth-logo-icon{width:48px;height:48px;background:rgba(255,255,255,0.2);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;}
+.auth-logo-text{font-family:'Nunito',sans-serif;font-weight:900;font-size:24px;}
+.auth-side h2{font-family:'Nunito',sans-serif;font-weight:900;font-size:28px;line-height:1.2;margin-bottom:14px;position:relative;}
+.auth-side p{opacity:.85;font-size:14px;line-height:1.7;margin-bottom:28px;position:relative;}
+.auth-features{list-style:none;position:relative;}
+.auth-features li{display:flex;align-items:center;gap:10px;margin-bottom:11px;font-size:13px;}
+.auth-features li i{width:20px;color:rgba(255,255,255,0.9);}
+.auth-form-side{padding:36px;display:flex;flex-direction:column;justify-content:center;overflow-y:auto;}
+.tabs{display:flex;gap:4px;background:var(--gray-100);border-radius:12px;padding:4px;margin-bottom:24px;}
+.tab{flex:1;padding:10px;text-align:center;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;color:var(--gray-600);transition:all .2s;}
+.tab.active{background:white;color:var(--primary);box-shadow:var(--shadow);}
+.form-group{margin-bottom:14px;}
+.form-group label{display:block;font-size:11px;font-weight:700;color:var(--gray-600);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px;}
+.form-control{width:100%;padding:11px 15px;border:2px solid var(--gray-200);border-radius:10px;font-family:'Poppins',sans-serif;font-size:13px;transition:border-color .2s;outline:none;}
+.form-control:focus{border-color:var(--primary);}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.role-selector{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.role-option{position:relative;}
+.role-option input{position:absolute;opacity:0;}
+.role-label{display:flex;flex-direction:column;align-items:center;gap:7px;padding:13px 10px;border:2px solid var(--gray-200);border-radius:12px;cursor:pointer;transition:all .2s;text-align:center;font-size:12px;font-weight:600;}
+.role-label i{font-size:20px;color:var(--gray-600);}
+.role-option input:checked+.role-label{border-color:var(--primary);background:#FFF5EE;color:var(--primary);}
+.role-option input:checked+.role-label i{color:var(--primary);}
+.btn-submit{width:100%;padding:13px;background:var(--primary);color:white;border:none;border-radius:12px;font-family:'Poppins',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:all .3s;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:6px;}
+.btn-submit:hover{background:var(--primary-dark);transform:translateY(-1px);box-shadow:0 4px 16px rgba(255,107,0,.4);}
+.btn-submit:disabled{background:var(--gray-200);color:var(--gray-600);transform:none;box-shadow:
