@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MarketMonde — Marketplace N°1 du Bénin | Acheter & Vendre en Sécurité</title>
+<title>MarketBénin — Marketplace N°1 du Bénin | Acheter & Vendre en Sécurité</title>
 <meta name="description" content="MarketBénin : la grande marketplace du Bénin. Achetez et vendez électronique, mode, alimentation. Paiement MTN Money, Moov Money. Livraison partout au Bénin.">
 <meta name="keywords" content="marketplace bénin, acheter en ligne bénin, vente en ligne cotonou, ecommerce afrique, MTN money, moov money">
 <meta name="robots" content="index, follow">
@@ -26,18 +26,12 @@
 <meta name="twitter:description" content="Achetez et vendez en toute sécurité au Bénin.">
 <meta name="twitter:image" content="https://marketbenin.github.io/og-image.jpg">
 
-<!-- PWA Manifest -->
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
-
 <!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
 <!-- Firebase -->
-<script type="module" src="app.js"></script>
-
 <style>
 /* =============================================
    VARIABLES & RESET
@@ -516,4 +510,8 @@ header {
 .cat-card:hover { border-color: var(--primary); transform: translateY(-4px); box-shadow: var(--shadow-md); }
 .cat-emoji-wrap {
   width: 54px; height: 54px; border-radius: 50%; margin: 0 auto 10px;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center; font-size: 24px;
+  transition: transform 0.2s;
+}
+.cat-card:hover .cat-emoji-wrap { transform: scale(1.15); }
+.cat-label { font-size: 12px; font-weight: 600; colo
